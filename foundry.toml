@@ -8,6 +8,7 @@
 # This overrides the `auto_detect_solc` value
 solc_version = '0.8.13'
 auto_detect_solc = false
+eth-rpc-url = https://mainnet.infura.io/v3/33041fe1478a423f85c4e319924e63e3
 # Increase optimizer_runs
 optimizer = true
 optimizer_runs = 1_000
@@ -17,6 +18,8 @@ fuzz_runs = 1_000
 remappings = [
   "@std=lib/forge-std/src/",
   "@solmate=lib/solmate/src/",
+  "@v3-core=lib/v3-core/contracts/",
+  "@v3-periphery=lib/v3-periphery/contracts/",
 ]
 
 # Extreme Fuzzing CI Profile :P
