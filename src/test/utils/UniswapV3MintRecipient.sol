@@ -1,0 +1,31 @@
+// SPDX-License-Identifier: MIT
+pragma solidity <0.8.0;
+
+import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
+
+contract UniswapV3MintRecipient {
+    address public immutable pool;
+    address public immutable tokenA;
+    address public immutable tokenB;
+
+    constructor(
+        address _pool,
+        address _tokenA,
+        address _tokenB
+    ) {
+        pool = _pool;
+        tokenA = _tokenA;
+        tokenB = _tokenB;
+    }
+
+    function uniswapV3MintCallback(
+        uint256 amount0,
+        uint256 amount1,
+        bytes calldata
+    ) external {
+        require(msg.sender == pool, "Unauthorised");
+
+        IERC20(tokenA).transfer(pool, amount0);
+        IERC20(tokenB).transfer(pool, amount1);
+    }
+}
