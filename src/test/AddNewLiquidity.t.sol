@@ -6,6 +6,7 @@ import {Address} from "./utils/Address.sol";
 import {MockToken} from "./utils/MockToken.sol";
 import {UniswapV3MintRecipient} from "./utils/UniswapV3MintRecipient.sol";
 
+import "@v3-core/libraries/Position.sol";
 import {Test} from "@std/Test.sol";
 import {IUniswapV3Factory} from "@v3-core/interfaces/IUniswapV3Factory.sol";
 import {IUniswapV3Pool} from "@v3-core/interfaces/IUniswapV3Pool.sol";
@@ -96,5 +97,205 @@ contract TestUniV3Pool is Test {
         );
     }
 
-    // function testMint
+    function testMintPriceLTTickLower() public {
+        // find current price and tick
+        (uint160 sqrtPriceX96, int24 currentTick, , , , , ) = pool.slot0();
+
+        // round off tick
+        currentTick = currentTick - (currentTick % tickSpacing);
+
+        int24 tickLower = currentTick + (tickSpacing << 1);
+        int24 tickUpper = currentTick + (tickSpacing << 2);
+
+        // find price from tick
+        uint160 priceSqrtAX96 = TickMath.getSqrtRatioAtTick(tickLower);
+        uint160 priceSqrtBX96 = TickMath.getSqrtRatioAtTick(tickUpper);
+
+        // calculate liquidity from price
+        uint128 liquidity = LiquidityAmounts.getLiquidityForAmounts(
+            sqrtPriceX96,
+            priceSqrtAX96,
+            priceSqrtBX96,
+            10e18,
+            10000e18
+        );
+
+        vm.prank(address(recipient));
+        pool.mint(address(recipient), tickLower, tickUpper, liquidity, hex"");
+
+        assertEq(
+            tokenA.balanceOf(address(pool)),
+            10e18 - tokenA.balanceOf(address(recipient))
+        );
+
+        // all liquiidty is in tokenA, as the lower tick is not in the range of the pool
+        assertEq(tokenB.balanceOf(address(pool)), 0);
+    }
+
+    function testMintPriceGTTickUpper() public {
+        // find current price and tick
+        (uint160 sqrtPriceX96, int24 currentTick, , , , , ) = pool.slot0();
+
+        // round off tick
+        currentTick = currentTick - (currentTick % tickSpacing);
+
+        int24 tickLower = currentTick - (tickSpacing << 2);
+        int24 tickUpper = currentTick - (tickSpacing << 1);
+
+        // find price from tick
+        uint160 priceSqrtAX96 = TickMath.getSqrtRatioAtTick(tickLower);
+        uint160 priceSqrtBX96 = TickMath.getSqrtRatioAtTick(tickUpper);
+
+        // calculate liquidity from price
+        uint128 liquidity = LiquidityAmounts.getLiquidityForAmounts(
+            sqrtPriceX96,
+            priceSqrtAX96,
+            priceSqrtBX96,
+            10e18,
+            10000e18
+        );
+
+        vm.prank(address(recipient));
+        pool.mint(address(recipient), tickLower, tickUpper, liquidity, hex"");
+
+        // all liquiidty is in tokenB, as the upper tick is not in the range of the pool
+        assertEq(tokenA.balanceOf(address(pool)), 0);
+        assertEq(
+            tokenB.balanceOf(address(pool)),
+            10000e18 - tokenB.balanceOf(address(recipient))
+        );
+    }
+
+    function testMintTwiceSameTick() public {
+        (uint160 sqrtPriceX96, int24 currentTick, , , , , ) = pool.slot0();
+
+        currentTick = currentTick - (currentTick % tickSpacing);
+
+        int24 tickLower = currentTick - (tickSpacing << 1);
+        int24 tickUpper = currentTick + (tickSpacing << 1);
+
+        uint160 priceSqrtAX96 = TickMath.getSqrtRatioAtTick(tickLower);
+        uint160 priceSqrtBX96 = TickMath.getSqrtRatioAtTick(tickUpper);
+
+        uint256 amount0 = 10e18 >> 1;
+        uint256 amount1 = 10000e18 >> 1;
+
+        uint128 liquidity = LiquidityAmounts.getLiquidityForAmounts(
+            sqrtPriceX96,
+            priceSqrtAX96,
+            priceSqrtBX96,
+            amount0,
+            amount1
+        );
+
+        vm.prank(address(recipient));
+        pool.mint(address(recipient), tickLower, tickUpper, liquidity, hex"");
+
+        vm.prank(address(recipient));
+        pool.mint(address(recipient), tickLower, tickUpper, liquidity, hex"");
+
+        assertEq(
+            tokenA.balanceOf(address(pool)),
+            10e18 - tokenA.balanceOf(address(recipient))
+        );
+        assertEq(
+            tokenB.balanceOf(address(pool)),
+            10000e18 - tokenB.balanceOf(address(recipient))
+        );
+    }
+
+    function testMintTwiceDifferentTick() public {
+        (uint160 sqrtPriceX96, int24 currentTick, , , , , ) = pool.slot0();
+
+        currentTick = currentTick - (currentTick % tickSpacing);
+
+        int24 tickLower = currentTick - (tickSpacing << 1);
+        int24 tickUpper = currentTick + (tickSpacing << 1);
+
+        uint160 priceSqrtAX96 = TickMath.getSqrtRatioAtTick(tickLower);
+        uint160 priceSqrtBX96 = TickMath.getSqrtRatioAtTick(tickUpper);
+
+        uint256 amount0 = 10e18 >> 1;
+        uint256 amount1 = 10000e18 >> 1;
+
+        uint128 liquidity = LiquidityAmounts.getLiquidityForAmounts(
+            sqrtPriceX96,
+            priceSqrtAX96,
+            priceSqrtBX96,
+            amount0,
+            amount1
+        );
+
+        vm.prank(address(recipient));
+        pool.mint(address(recipient), tickLower, tickUpper, liquidity, hex"");
+
+        tickLower = tickUpper;
+        tickUpper = tickUpper + (tickSpacing << 1);
+
+        vm.prank(address(recipient));
+        pool.mint(address(recipient), tickLower, tickUpper, liquidity, hex"");
+
+        assertEq(
+            tokenA.balanceOf(address(pool)),
+            10e18 - tokenA.balanceOf(address(recipient))
+        );
+        assertEq(
+            tokenB.balanceOf(address(pool)),
+            10000e18 - tokenB.balanceOf(address(recipient))
+        );
+    }
+
+    function testBurn() public {
+        (uint160 sqrtPriceX96, int24 currentTick, , , , , ) = pool.slot0();
+
+        // round off tick
+        currentTick = currentTick - (currentTick % tickSpacing);
+
+        int24 tickLower = currentTick - (tickSpacing << 1);
+        int24 tickUpper = currentTick + (tickSpacing << 1);
+
+        uint160 priceSqrtAX96 = TickMath.getSqrtRatioAtTick(tickLower);
+        uint160 priceSqrtBX96 = TickMath.getSqrtRatioAtTick(tickUpper);
+
+        uint256 amount0 = 10e18;
+        uint256 amount1 = 10000e18;
+
+        uint128 liquidity = LiquidityAmounts.getLiquidityForAmounts(
+            sqrtPriceX96,
+            priceSqrtAX96,
+            priceSqrtBX96,
+            amount0,
+            amount1
+        );
+
+        (amount0, amount1) = LiquidityAmounts.getAmountsForLiquidity(
+            sqrtPriceX96,
+            priceSqrtAX96,
+            priceSqrtBX96,
+            liquidity
+        );
+
+        vm.prank(address(recipient));
+        pool.mint(address(recipient), tickLower, tickUpper, liquidity, hex"");
+
+        vm.prank(address(recipient));
+        pool.burn(tickLower, tickUpper, liquidity);
+
+        (, , , uint128 tokensOwed0, uint128 tokensOwed1) = pool.positions(
+            keccak256(
+                abi.encodePacked(address(recipient), tickLower, tickUpper)
+            )
+        );
+        assertEq(tokensOwed0, amount0);
+        assertEq(tokensOwed1, amount1);
+
+        assertEq(
+            tokenA.balanceOf(address(pool)),
+            10e18 - tokenA.balanceOf(address(recipient))
+        );
+        assertEq(
+            tokenB.balanceOf(address(pool)),
+            10000e18 - tokenB.balanceOf(address(recipient))
+        );
+    }
 }
