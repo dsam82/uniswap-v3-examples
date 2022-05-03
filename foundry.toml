@@ -7,7 +7,6 @@
 # Sets the concrete solc version to use
 # This overrides the `auto_detect_solc` value
 auto_detect_solc = true
-eth-rpc-url = "https://mainnet.infura.io/v3/33041fe1478a423f85c4e319924e63e3"
 # Increase optimizer_runs
 optimizer = true
 optimizer_runs = 1_000
