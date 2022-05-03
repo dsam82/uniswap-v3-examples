@@ -23,7 +23,7 @@ build  :; forge build
 scripts :; chmod +x ./scripts/*
 
 # Tests
-test :; forge clean && forge test --optimize --optimizer-runs 1000000 -v -f $(FORK_URL) #--ffi # enable if you need the `ffi` cheat code on HEVM
+test :; forge clean && forge test --optimize --optimizer-runs 1000000 -v # --ffi # enable if you need the `ffi` cheat code on HEVM
 
 # Lints
 lint :; npx prettier --write src/
