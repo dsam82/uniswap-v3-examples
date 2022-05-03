@@ -1,17 +1,21 @@
 // SPDX-License-Identifier: MIT
 pragma solidity <0.8.0;
+pragma abicoder v2;
 
 import "./utils/SqrtMath.sol";
 import {Address} from "./utils/Address.sol";
 import {MockToken} from "./utils/MockToken.sol";
-import {UniswapV3MintRecipient} from "./utils/UniswapV3MintRecipient.sol";
+import {UniswapV3Recipient} from "./utils/UniswapV3Recipient.sol";
 
 import "@v3-core/libraries/Position.sol";
 import {Test} from "@std/Test.sol";
+import {console} from "@std/console.sol";
 import {IUniswapV3Factory} from "@v3-core/interfaces/IUniswapV3Factory.sol";
 import {IUniswapV3Pool} from "@v3-core/interfaces/IUniswapV3Pool.sol";
 import {TickMath} from "@v3-core/libraries/TickMath.sol";
 import {LiquidityAmounts} from "@v3-periphery/libraries/LiquidityAmounts.sol";
+import {IQuoterV2} from "@v3-periphery/interfaces/IQuoterV2.sol";
+import {QuoterV2} from "@v3-periphery/lens/QuoterV2.sol";
 
 /// @title A title that should describe the contract/interface
 /// @author The name of the author
@@ -22,7 +26,8 @@ contract TestUniV3Pool is Test {
 
     IUniswapV3Factory public factory = IUniswapV3Factory(Address.UNIV3_FACTORY);
     IUniswapV3Pool public pool;
-    UniswapV3MintRecipient public recipient;
+    IQuoterV2 public quoter;
+    UniswapV3Recipient public recipient;
 
     MockToken public tokenA;
     MockToken public tokenB;
@@ -45,8 +50,11 @@ contract TestUniV3Pool is Test {
         );
         vm.label(address(pool), "POOL");
 
+        quoter = new QuoterV2(address(factory), Address.WETH);
+        vm.label(address(quoter), "QUOTER");
+
         // setup recipient and mint tokens
-        recipient = new UniswapV3MintRecipient(
+        recipient = new UniswapV3Recipient(
             address(pool),
             address(tokenA),
             address(tokenB)
@@ -59,6 +67,29 @@ contract TestUniV3Pool is Test {
         pool.initialize(sqrtPriceX96);
 
         tickSpacing = pool.tickSpacing();
+    }
+
+    function setupMint() internal {
+        (uint160 sqrtPriceX96, int24 currentTick, , , , , ) = pool.slot0();
+
+        currentTick = currentTick - (currentTick % tickSpacing);
+
+        int24 tickLower = currentTick - (tickSpacing << 1);
+        int24 tickUpper = currentTick + (tickSpacing << 1);
+
+        uint160 priceSqrtAX96 = TickMath.getSqrtRatioAtTick(tickLower);
+        uint160 priceSqrtBX96 = TickMath.getSqrtRatioAtTick(tickUpper);
+
+        uint128 liquidity = LiquidityAmounts.getLiquidityForAmounts(
+            sqrtPriceX96,
+            priceSqrtAX96,
+            priceSqrtBX96,
+            10e18,
+            10000e18
+        );
+
+        vm.prank(address(recipient));
+        pool.mint(address(recipient), tickLower, tickUpper, liquidity, hex"");
     }
 
     function testMint() public {
@@ -297,5 +328,109 @@ contract TestUniV3Pool is Test {
             tokenB.balanceOf(address(pool)),
             10000e18 - tokenB.balanceOf(address(recipient))
         );
+    }
+
+    function testBurnAndCollect() public {
+        (uint160 sqrtPriceX96, int24 currentTick, , , , , ) = pool.slot0();
+
+        // round off tick
+        currentTick = currentTick - (currentTick % tickSpacing);
+
+        int24 tickLower = currentTick - (tickSpacing << 1);
+        int24 tickUpper = currentTick + (tickSpacing << 1);
+
+        uint160 priceSqrtAX96 = TickMath.getSqrtRatioAtTick(tickLower);
+        uint160 priceSqrtBX96 = TickMath.getSqrtRatioAtTick(tickUpper);
+
+        uint256 amount0 = 10e18;
+        uint256 amount1 = 10000e18;
+
+        uint128 liquidity = LiquidityAmounts.getLiquidityForAmounts(
+            sqrtPriceX96,
+            priceSqrtAX96,
+            priceSqrtBX96,
+            amount0,
+            amount1
+        );
+
+        (amount0, amount1) = LiquidityAmounts.getAmountsForLiquidity(
+            sqrtPriceX96,
+            priceSqrtAX96,
+            priceSqrtBX96,
+            liquidity
+        );
+
+        vm.startPrank(address(recipient));
+        pool.mint(address(recipient), tickLower, tickUpper, liquidity, hex"");
+
+        pool.burn(tickLower, tickUpper, liquidity);
+
+        pool.collect(
+            address(recipient),
+            tickLower,
+            tickUpper,
+            uint128(amount0),
+            uint128(amount1)
+        );
+
+        assertEq(tokenA.balanceOf(address(pool)), 1);
+        assertEq(tokenB.balanceOf(address(pool)), 1);
+    }
+
+    function testSwapZeroToOne() public {
+        setupMint();
+
+        tokenA.mint(address(recipient), 1e18);
+
+        (uint256 amountOut, , , ) = quoter.quoteExactInputSingle(
+            IQuoterV2.QuoteExactInputSingleParams({
+                tokenIn: address(tokenA),
+                tokenOut: address(tokenB),
+                amountIn: 2e18,
+                fee: fee,
+                sqrtPriceLimitX96: 1e18
+            })
+        );
+
+        vm.prank(address(recipient));
+        (int256 amount0, int256 amount1) = pool.swap(
+            address(recipient),
+            true,
+            int256(amountOut),
+            2e18,
+            hex""
+        );
+
+        assertGt(amount0, 0);
+        assertLt(amount1, 0);
+    }
+
+    function testSwapOneToZero() public {
+        setupMint();
+        (uint160 sqrtPriceX96, , , , , , ) = pool.slot0();
+
+        tokenB.mint(address(recipient), 1e18);
+
+        (uint256 amountOut, , , ) = quoter.quoteExactInputSingle(
+            IQuoterV2.QuoteExactInputSingleParams({
+                tokenIn: address(tokenB),
+                tokenOut: address(tokenA),
+                amountIn: 2000e18,
+                fee: fee,
+                sqrtPriceLimitX96: sqrtPriceX96 << 1
+            })
+        );
+
+        vm.prank(address(recipient));
+        (int256 amount0, int256 amount1) = pool.swap(
+            address(recipient),
+            false,
+            int256(amountOut),
+            sqrtPriceX96 << 1,
+            hex""
+        );
+
+        assertLt(amount0, 0);
+        assertGt(amount1, 0);
     }
 }

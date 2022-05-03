@@ -3,7 +3,7 @@ pragma solidity <0.8.0;
 
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 
-contract UniswapV3MintRecipient {
+contract UniswapV3Recipient {
     address public immutable pool;
     address public immutable tokenA;
     address public immutable tokenB;
@@ -27,5 +27,20 @@ contract UniswapV3MintRecipient {
 
         IERC20(tokenA).transfer(pool, amount0);
         IERC20(tokenB).transfer(pool, amount1);
+    }
+
+    function uniswapV3SwapCallback(
+        int256 amount0,
+        int256 amount1,
+        bytes calldata
+    ) external {
+        require(msg.sender == pool, "Unauthorised");
+
+        if (amount0 > 0) {
+            IERC20(tokenA).transfer(msg.sender, uint256(amount0));
+        }
+        if (amount1 > 0) {
+            IERC20(tokenB).transfer(msg.sender, uint256(amount1));
+        }
     }
 }
