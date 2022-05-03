@@ -15,7 +15,7 @@ jobs:
           version: nightly
       - name: Install Dependencies
         run: yarn
-      - name: Update Modules
-        run: yarn sync
+      # - name: Update Modules
+      #   run: yarn sync
       - name: Run Tests
         run: FOUNDRY_PROFILE=ci yarn test

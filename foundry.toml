@@ -16,10 +16,11 @@ fuzz_runs = 1_000
 remappings = [
   "@std=lib/forge-std/src/",
   "@solmate=lib/solmate/src/",
-  "@openzeppelin=lib/openzeppelin-contracts/contracts/",
+  "@openzepp=lib/openzeppelin-contracts/contracts/",
   "@v3-core=lib/v3-core/contracts/",
   "@v3-periphery=lib/v3-periphery/contracts/",
   "@uniswap/v3-core=lib/v3-core/",
+  "@openzeppelin=lib/openzeppelin-contracts/",
 ]
 
 # Extreme Fuzzing CI Profile :P

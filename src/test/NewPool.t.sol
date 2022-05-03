@@ -373,6 +373,8 @@ contract TestUniV3Pool is Test {
             uint128(amount1)
         );
 
+        vm.stopPrank();
+
         assertEq(tokenA.balanceOf(address(pool)), 1);
         assertEq(tokenB.balanceOf(address(pool)), 1);
     }
